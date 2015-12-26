@@ -6,9 +6,10 @@ open System.Linq
 
 open FSharp.Data
 
-type public Dimension(dimensionName: string, memberList: string[]) =  
+type public Dimension(dimensionName: string, position: int, memberList: string[]) =  
     class
         member this.name = dimensionName
+        member this.position = position
         member this.members = memberList
     end
 
@@ -17,67 +18,90 @@ type Dataset(dimensions: Dimension[]) =
         member this.dimensions = dimensions
     end
         
-type dimPos = { dim : string; pos : int; members : string list }
+type ObservationFilter(dimension : string, dimensionPosition : int, memberFilter : option<string list>) = 
+    class
+        member this.dimension = dimension
+        member this.dimensionPosition = dimensionPosition
+        member this.memberFilter = memberFilter
+    end
         
 [<AbstractClass>]
 type public Parser(filePath: string) = 
-    let data = CsvFile.Load(filePath, ",", '"',true,false, 8).Cache()
         
     abstract member headerRowCount : int
 
+    member val dataset : option<Dataset> = None with get, set
+
+    // Split string with comma separated dimensions to array
+    member x.splitDimensions (dimensions : string, ?startPosition : int) = 
+        let sep = [|"\",\""|]
+        let opt = System.StringSplitOptions.RemoveEmptyEntries
+
+        if startPosition.IsSome then
+            dimensions.Split (sep, startPosition.Value, opt)
+        else
+            dimensions.Split (sep, opt)
+
+    member x.splitObservation (obs : string) =
+        obs.Split ([|':'|], System.StringSplitOptions.RemoveEmptyEntries)
+
+    member x.isTimePeriodColumn (column : string) =
+        column = "Time Period"
+
+    // Get dataset including the dimesions and the related memebers
     member x.getDataset = 
-            let lines = File.ReadLines(filePath)
+            match x.dataset with
+                | Some d -> d
+                | None ->   let lines = File.ReadLines(filePath)
+            
+                            let dimNames = 
+                                x.splitDimensions <| lines.Skip(x.headerRowCount).First()
+                                    |> Seq.takeWhile (fun d -> not (x.isTimePeriodColumn d))
+                                    |> Array.ofSeq
 
-            let headers = lines
-                            |> Seq.skip x.headerRowCount
-                            |> Seq.take 1 
-                            |> Seq.collect (fun h -> h.Split ([|"\",\""|], System.StringSplitOptions.RemoveEmptyEntries))
-                            |> Seq.takeWhile (fun d -> d <> "Time Period")
-                            |> Array.ofSeq
-
-            let observations = lines
-                                |> Seq.skip (x.headerRowCount + 1)
-                                |> Seq.map (fun o -> o.Split([|"\",\""|], headers.Length + 1, System.StringSplitOptions.RemoveEmptyEntries))
-                                |> Array.ofSeq
+                            let observations = 
+                                lines
+                                    |> Seq.skip (x.headerRowCount + 1)
+                                    |> Seq.map (fun o -> x.splitDimensions(o, dimNames.Length + 1))
+                                    |> Array.ofSeq
                 
-            let dimensions = [1 .. headers.Length - 1]
-                                |> Seq.mapi (fun i d -> observations
-                                                            |> Seq.map (fun o -> Array.get o i)
-                                                            |> Seq.distinct
-                                                            |> Array.ofSeq)
-                                |> Seq.mapi (fun i d -> new Dimension ((Array.get headers i), d))
-                                |> Array.ofSeq
-                
-            new Dataset(dimensions)
+                            let dimensions = 
+                                [1 .. dimNames.Length]
+                                    |> Seq.mapi 
+                                        (fun i d -> 
+                                            observations
+                                                |> Seq.map (fun obs -> Array.get obs i)
+                                                |> Seq.distinct
+                                                |> Array.ofSeq)
+                                    |> Seq.mapi (fun i dim -> new Dimension ((Array.get dimNames i), i, dim))
+                                    |> Array.ofSeq
+               
+                            x.dataset <- Some(new Dataset(dimensions))
+                            x.dataset.Value
 
+    // Retrieve observations based on observation code part filter
+    member x.filter (obsFilter : Dictionary<string, string list>) =
+            
+            let dataset = x.getDataset
+            
+            let filterDims = 
+                dataset.dimensions
+                    |> Seq.map (fun dim -> new ObservationFilter(dim.name, dim.position, if obsFilter.ContainsKey(dim.name) then Some(obsFilter.[dim.name]) else None))
+                    |> Seq.filter (fun f -> f.memberFilter.IsSome)
+                    |> Seq.toArray
 
-    member x.filter (obsFilter:Dictionary<string, string list>) =
-            let lines = File.ReadLines(filePath)
+            let headerCount = dataset.dimensions.Count()
 
-            let headers = lines
-                            |> Seq.skip x.headerRowCount
-                            |> Seq.take 1 
-                            |> Seq.collect (fun h -> h.Split ([|"\",\""|], System.StringSplitOptions.RemoveEmptyEntries))
-                            |> Seq.takeWhile (fun d -> d <> "Time Period")
-                            |> Seq.toArray
-
-            let dims =  headers
-                        |> Seq.mapi (fun i d -> { dim = d; pos = i; members = if obsFilter.ContainsKey(d) then obsFilter.[d] else [] })
-                        |> Seq.filter (fun f -> f.members.Length > 0)
-                        |> Seq.toArray
-
-            let headerCount = headers.Count()
-
-            let filtered = lines
-                                |> Seq.skip (x.headerRowCount + 1)
-                                |> Seq.map (fun o -> o.Split([|"\",\""|], System.StringSplitOptions.RemoveEmptyEntries))
-                                |> Seq.filter (fun o -> let obsArr = o.[headerCount].Split ([|':'|], System.StringSplitOptions.RemoveEmptyEntries)
-                                                        dims
-                                                            |> Seq.filter (fun flt -> flt.members.Contains(obsArr.[flt.pos]))
-                                                            |> Seq.length = dims.Count()
-                                                )
-                                |> Seq.map (fun o -> o.Skip(headerCount).ToArray())
-                                |> List.ofSeq
+            let filtered = 
+                File.ReadAllLines(filePath)
+                    |> Seq.skip (x.headerRowCount + 1)
+                    |> Seq.map x.splitDimensions
+                    |> Seq.filter (fun o -> let obs = x.splitObservation(o.[headerCount])
+                                            filterDims
+                                                |> Seq.filter (fun obsFilter -> obsFilter.memberFilter.Value.Contains(obs.[obsFilter.dimensionPosition]))
+                                                |> Seq.length = filterDims.Count())
+                    |> Seq.map (fun o -> o.Skip(headerCount).ToArray())
+                    |> List.ofSeq
 
             filtered
 
