@@ -54,7 +54,7 @@
     <Compile Include="ProvidedTypes.fsi" />
     <Compile Include="ProvidedTypes.fs" />
     <Compile Include="DebugProvidedTypes.fs" />
-    <Compile Include="DatasetPrasers.fs" />
+    <Compile Include="DatasetParsers.fs" />
     <Compile Include="BisProvider.fs" />
     <Content Include="packages.config" />
     <Content Include="app.config" />

@@ -6,6 +6,7 @@ open System.Linq
 
 open FSharp.Data
 
+// Representation of a dataset dimension
 type public Dimension(dimensionName: string, position: int, memberList: string[]) =  
     class
         member this.name = dimensionName
@@ -13,11 +14,13 @@ type public Dimension(dimensionName: string, position: int, memberList: string[]
         member this.members = memberList
     end
 
+// Representation of a dataset
 type Dataset(dimensions: Dimension[]) =
     class 
         member this.dimensions = dimensions
     end
-        
+       
+// representation of a filter 
 type ObservationFilter(dimension : string, dimensionPosition : int, memberFilter : option<string list>) = 
     class
         member this.dimension = dimension
@@ -25,6 +28,7 @@ type ObservationFilter(dimension : string, dimensionPosition : int, memberFilter
         member this.memberFilter = memberFilter
     end
         
+// Base class for parsers
 [<AbstractClass>]
 type public Parser(filePath: string) = 
         
@@ -105,10 +109,12 @@ type public Parser(filePath: string) =
 
             filtered
 
+// CBS specific parser
 type public CbsParser(filePath) =
     inherit Parser(filePath)
     override this.headerRowCount = 8
 
+// LBS specific parser
 type public LbsParser(filePath) =
     inherit Parser(filePath)
     override this.headerRowCount = 7
