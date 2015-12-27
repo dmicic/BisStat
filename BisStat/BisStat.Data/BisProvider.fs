@@ -22,6 +22,7 @@ type public DatasetProvider(cfg:TypeProviderConfig) as this =
     
     let mutable pathToDatasetFile = @"C:/Users/Darko/Desktop/full_BIS_CBS_csv.csv"
     let parameters = [ProvidedStaticParameter("PathToDatasetFile", typeof<string>)]
+    let mutable parserInstance : option<Parser> = None
 
     let datasetProvider = 
         let dataset = ProvidedTypeDefinition(asm, ns, "Dataset", Some typeof<obj>)
@@ -31,20 +32,27 @@ type public DatasetProvider(cfg:TypeProviderConfig) as this =
         // Apply filter on statistics file
         dataset.AddMember <| ProvidedMethod("Filter",
                                        [ProvidedParameter("obsFilter", typeof<Dictionary<string,string list>>)], 
-                                       typeof<string[] list>, 
+                                       typeof<Observation list>, 
                                        InvokeCode = (fun [me; obsFilter] -> 
                                                             <@@
                                                                 let parser = new CbsParser(@"C:/Users/Darko/Desktop/full_BIS_CBS_csv.csv")
                                                                 parser.filter ((%%obsFilter : Dictionary<string, string list>))
                                                             @@>))
         dataset
-        
+    
+    let parser =
+        match parserInstance with
+            | (Some d) -> d
+            | None -> parserInstance <-
+                        match Path.GetFileName(pathToDatasetFile).ToLower() with
+                            | ds when ds.Contains("_cbs_") -> Some(new CbsParser(pathToDatasetFile) :> Parser)
+                            | ds when ds.Contains("_lbs_") -> Some(new LbsParser(pathToDatasetFile) :> Parser)
+                      parserInstance.Value
+
     // Generate type per dimension
     let dimensionTypes =  
-        let set = CbsParser(pathToDatasetFile).getDataset
-
         let providers = 
-            set.dimensions
+            parser.getDataset.dimensions
                 |> Seq.map (fun d -> 
                                 let p = ProvidedTypeDefinition(asm, ns, d.name, Some typeof<obj>)
                                 d.members
@@ -56,7 +64,7 @@ type public DatasetProvider(cfg:TypeProviderConfig) as this =
         providers
 
     let filterProvider =
-        let set = CbsParser(pathToDatasetFile).getDataset
+        let set = parser.getDataset
 
         // Observation filter type
         let fp = ProvidedTypeDefinition(asm, ns, "Filter", Some typeof<obj>, HideObjectMethods = true)

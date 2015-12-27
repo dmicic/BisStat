@@ -4,6 +4,8 @@ open System.Collections.Generic
 open System.IO
 open System.Linq
 
+open Microsoft.FSharp.Core.Operators
+
 open FSharp.Data
 
 // Representation of a dataset dimension
@@ -15,9 +17,10 @@ type public Dimension(dimensionName: string, position: int, memberList: string[]
     end
 
 // Representation of a dataset
-type Dataset(dimensions: Dimension[]) =
+type Dataset(dimensions: Dimension[], periods: string[]) =
     class 
         member this.dimensions = dimensions
+        member this.periods = periods
     end
        
 // representation of a filter 
@@ -26,6 +29,13 @@ type ObservationFilter(dimension : string, dimensionPosition : int, memberFilter
         member this.dimension = dimension
         member this.dimensionPosition = dimensionPosition
         member this.memberFilter = memberFilter
+    end
+
+// Representation of an observation an values per period
+type Observation(key : string, values : Map<string, option<float>>) =
+    class
+        member this.key = key
+        member this.values = values
     end
         
 // Base class for parsers
@@ -61,6 +71,14 @@ type public Parser(filePath: string) =
                             let dimNames = 
                                 x.splitDimensions <| lines.Skip(x.headerRowCount).First()
                                     |> Seq.takeWhile (fun d -> not (x.isTimePeriodColumn d))
+                                    |> Seq.map (fun d -> d.Replace("\"", ""))
+                                    |> Array.ofSeq
+
+                            let periods =
+                                x.splitDimensions <| lines.Skip(x.headerRowCount).First()
+                                    |> Seq.skipWhile (fun d -> not (x.isTimePeriodColumn d))
+                                    |> Seq.skip 1
+                                    |> Seq.map (fun d -> d.Replace("\"", ""))
                                     |> Array.ofSeq
 
                             let observations = 
@@ -80,7 +98,7 @@ type public Parser(filePath: string) =
                                     |> Seq.mapi (fun i dim -> new Dimension ((Array.get dimNames i), i, dim))
                                     |> Array.ofSeq
                
-                            x.dataset <- Some(new Dataset(dimensions))
+                            x.dataset <- Some(new Dataset(dimensions, periods))
                             x.dataset.Value
 
     // Retrieve observations based on observation code part filter
@@ -105,6 +123,8 @@ type public Parser(filePath: string) =
                                                 |> Seq.filter (fun obsFilter -> obsFilter.memberFilter.Value.Contains(obs.[obsFilter.dimensionPosition]))
                                                 |> Seq.length = filterDims.Count())
                     |> Seq.map (fun o -> o.Skip(headerCount).ToArray())
+                    |> Seq.map (fun o -> o.[o.Length-1] <- o.[o.Length-1].Replace("\"",System.String.Empty)
+                                         new Observation(o.[0], new Map<string, option<float>>(dataset.periods |> Seq.mapi (fun i period -> period, (if (i+1 < o.Length) && not (System.String.IsNullOrWhiteSpace(o.[i+1])) then Some(System.Convert.ToDouble(o.[i+1])) else None))))) //Some(System.Convert.ToDouble(o.[i+1]))
                     |> List.ofSeq
 
             filtered
