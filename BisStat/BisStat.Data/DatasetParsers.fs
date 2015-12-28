@@ -145,10 +145,40 @@ module Parser =
         inherit Parser(filePath)
         override this.headerRowCount = 6
 
+    // Property prices selected
+    type public PpSelectedParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 5
+
+    // Debt. securities
+    type public DebtSecurityParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 10
+
+    // Effective exchange rates
+    type public EffectiveExchangeRatesParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 4
+
+    // Credit to non-financial sector
+    type public CreditNonFinancialSectorParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 5
+
+    // Debt service ratios for the private non-financial sector
+    type public DebtServiceRatioParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 7
+
     // Parser factory
     let createPraser pathToDatasetFile =
         match Path.GetFileName(pathToDatasetFile).ToLower() with
             | ds when ds.Contains("_cbs_") -> new CbsParser(pathToDatasetFile) :> Parser
             | ds when ds.Contains("_lbs_") -> new LbsParser(pathToDatasetFile) :> Parser
             | ds when ds.Contains("_long_pp_") -> new PpLongParser(pathToDatasetFile) :> Parser
+            | ds when ds.Contains("_selected_pp_") -> new PpSelectedParser(pathToDatasetFile) :> Parser
+            | ds when ds.Contains("_debt_sec2_") -> new DebtSecurityParser(pathToDatasetFile) :> Parser
+            | ds when ds.Contains("_eer_") -> new EffectiveExchangeRatesParser(pathToDatasetFile) :> Parser
+            | ds when ds.Contains("_total_credit_") -> new CreditNonFinancialSectorParser(pathToDatasetFile) :> Parser
+            | ds when ds.Contains("_dsr_") -> new DebtServiceRatioParser(pathToDatasetFile) :> Parser
             | _ -> failwith("Dataset not yet supported. File: " + pathToDatasetFile)
