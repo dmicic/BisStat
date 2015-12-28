@@ -1,4 +1,4 @@
-﻿namespace BisStat.Data.Parser
+﻿namespace BisStat.Data
 
 open System.Collections.Generic
 open System.IO
@@ -8,103 +8,104 @@ open Microsoft.FSharp.Core.Operators
 
 open FSharp.Data
 
-// Representation of a dataset dimension
-type public Dimension(dimensionName: string, position: int, memberList: string[]) =  
-    class
-        member this.name = dimensionName
-        member this.position = position
-        member this.members = memberList
-    end
+module Parser =
 
-// Representation of a dataset
-type Dataset(dimensions: Dimension[], periods: string[]) =
-    class 
-        member this.dimensions = dimensions
-        member this.periods = periods
-    end
+    // Representation of a dataset dimension
+    type public Dimension(dimensionName: string, position: int, memberList: string[]) =  
+        class
+            member this.name = dimensionName
+            member this.position = position
+            member this.members = memberList
+        end
+
+    // Representation of a dataset
+    type Dataset(dimensions: Dimension[], periods: string[]) =
+        class 
+            member this.dimensions = dimensions
+            member this.periods = periods
+        end
        
-// representation of a filter 
-type ObservationFilter(dimension : string, dimensionPosition : int, memberFilter : option<string list>) = 
-    class
-        member this.dimension = dimension
-        member this.dimensionPosition = dimensionPosition
-        member this.memberFilter = memberFilter
-    end
+    // representation of a filter 
+    type ObservationFilter(dimension : string, dimensionPosition : int, memberFilter : option<string list>) = 
+        class
+            member this.dimension = dimension
+            member this.dimensionPosition = dimensionPosition
+            member this.memberFilter = memberFilter
+        end
 
-// Representation of an observation an values per period
-type Observation(key : string, values : Map<string, option<float>>) =
-    class
-        member this.key = key
-        member this.values = values
-    end
+    // Representation of an observation an values per period
+    type Observation(key : string, values : Map<string, option<float>>) =
+        class
+            member this.key = key
+            member this.values = values
+        end
         
-// Base class for parsers
-[<AbstractClass>]
-type public Parser(filePath: string) = 
+    // Base class for parsers
+    [<AbstractClass>]
+    type public Parser(filePath: string) = 
         
-    abstract member headerRowCount : int
+        abstract member headerRowCount : int
 
-    member val dataset : option<Dataset> = None with get, set
+        member val dataset : option<Dataset> = None with get, set
 
-    // Split string with comma separated dimensions to array
-    member x.splitDimensions (dimensions : string, ?startPosition : int) = 
-        let sep = [|"\",\""|]
-        let opt = System.StringSplitOptions.RemoveEmptyEntries
+        // Split string with comma separated dimensions to array
+        member x.splitDimensions (dimensions : string, ?startPosition : int) = 
+            let sep = [|"\",\""|]
+            let opt = System.StringSplitOptions.RemoveEmptyEntries
 
-        if startPosition.IsSome then
-            dimensions.Split (sep, startPosition.Value, opt)
-        else
-            dimensions.Split (sep, opt)
+            if startPosition.IsSome then
+                dimensions.Split (sep, startPosition.Value, opt)
+            else
+                dimensions.Split (sep, opt)
 
-    member x.splitObservation (obs : string) =
-        obs.Split ([|':'|], System.StringSplitOptions.RemoveEmptyEntries)
+        member x.splitObservation (obs : string) =
+            obs.Split ([|':'|], System.StringSplitOptions.RemoveEmptyEntries)
 
-    member x.isTimePeriodColumn (column : string) =
-        column = "Time Period"
+        member x.isTimePeriodColumn (column : string) =
+            column = "Time Period"
 
-    // Get dataset including the dimesions and the related memebers
-    member x.getDataset = 
-            match x.dataset with
-                | Some d -> d
-                | None ->   let lines = File.ReadLines(filePath)
+        // Get dataset including the dimesions and the related memebers
+        member x.getDataset () = 
+                match x.dataset with
+                    | Some d -> d
+                    | None ->   let lines = File.ReadLines(filePath)
             
-                            let dimNames = 
-                                x.splitDimensions <| lines.Skip(x.headerRowCount).First()
-                                    |> Seq.takeWhile (fun d -> not (x.isTimePeriodColumn d))
-                                    |> Seq.map (fun d -> d.Replace("\"", ""))
-                                    |> Array.ofSeq
+                                let dimNames = 
+                                    x.splitDimensions <| lines.Skip(x.headerRowCount).First()
+                                        |> Seq.takeWhile (fun d -> not (x.isTimePeriodColumn d))
+                                        |> Seq.map (fun d -> d.Replace("\"", ""))
+                                        |> Array.ofSeq
 
-                            let periods =
-                                x.splitDimensions <| lines.Skip(x.headerRowCount).First()
-                                    |> Seq.skipWhile (fun d -> not (x.isTimePeriodColumn d))
-                                    |> Seq.skip 1
-                                    |> Seq.map (fun d -> d.Replace("\"", ""))
-                                    |> Array.ofSeq
+                                let periods =
+                                    x.splitDimensions <| lines.Skip(x.headerRowCount).First()
+                                        |> Seq.skipWhile (fun d -> not (x.isTimePeriodColumn d))
+                                        |> Seq.skip 1
+                                        |> Seq.map (fun d -> d.Replace("\"", ""))
+                                        |> Array.ofSeq
 
-                            let observations = 
-                                lines
-                                    |> Seq.skip (x.headerRowCount + 1)
-                                    |> Seq.map (fun o -> x.splitDimensions(o, dimNames.Length + 1))
-                                    |> Array.ofSeq
+                                let observations = 
+                                    lines
+                                        |> Seq.skip (x.headerRowCount + 1)
+                                        |> Seq.map (fun o -> x.splitDimensions(o, dimNames.Length + 1))
+                                        |> Array.ofSeq
                 
-                            let dimensions = 
-                                [1 .. dimNames.Length]
-                                    |> Seq.mapi 
-                                        (fun i d -> 
-                                            observations
-                                                |> Seq.map (fun obs -> Array.get obs i)
-                                                |> Seq.distinct
-                                                |> Array.ofSeq)
-                                    |> Seq.mapi (fun i dim -> new Dimension ((Array.get dimNames i), i, dim))
-                                    |> Array.ofSeq
+                                let dimensions = 
+                                    [1 .. dimNames.Length]
+                                        |> Seq.mapi 
+                                            (fun i d -> 
+                                                observations
+                                                    |> Seq.map (fun obs -> Array.get obs i)
+                                                    |> Seq.distinct
+                                                    |> Array.ofSeq)
+                                        |> Seq.mapi (fun i dim -> new Dimension ((Array.get dimNames i), i, dim))
+                                        |> Array.ofSeq
                
-                            x.dataset <- Some(new Dataset(dimensions, periods))
-                            x.dataset.Value
+                                x.dataset <- Some(new Dataset(dimensions, periods))
+                                x.dataset.Value
 
-    // Retrieve observations based on observation code part filter
-    member x.filter (obsFilter : Dictionary<string, string list>) =
-            
-            let dataset = x.getDataset
+        // Retrieve observations based on observation code part filter
+        member x.filter (obsFilter : Dictionary<string, string list>) =
+            let dataset = x.getDataset()
             
             let filterDims = 
                 dataset.dimensions
@@ -129,12 +130,25 @@ type public Parser(filePath: string) =
 
             filtered
 
-// CBS specific parser
-type public CbsParser(filePath) =
-    inherit Parser(filePath)
-    override this.headerRowCount = 8
+    // CBS specific parser
+    type public CbsParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 8
 
-// LBS specific parser
-type public LbsParser(filePath) =
-    inherit Parser(filePath)
-    override this.headerRowCount = 7
+    // LBS specific parser
+    type public LbsParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 7
+
+    // Property prices long
+    type public PpLongParser(filePath) =
+        inherit Parser(filePath)
+        override this.headerRowCount = 6
+
+    // Parser factory
+    let createPraser pathToDatasetFile =
+        match Path.GetFileName(pathToDatasetFile).ToLower() with
+            | ds when ds.Contains("_cbs_") -> new CbsParser(pathToDatasetFile) :> Parser
+            | ds when ds.Contains("_lbs_") -> new LbsParser(pathToDatasetFile) :> Parser
+            | ds when ds.Contains("_long_pp_") -> new PpLongParser(pathToDatasetFile) :> Parser
+            | _ -> failwith("Dataset not yet supported. File: " + pathToDatasetFile)
