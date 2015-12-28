@@ -65,14 +65,16 @@ type public DatasetProvider(cfg:TypeProviderConfig) as this =
                 |> filterTy.AddMembers
 
             // Get whole filter definition
-            let getFilterMeth = ProvidedMethod("Get", [], typeof<Dictionary<string,string list>>)
+            let getFilterMeth = ProvidedMethod("Get", [], typeof<Observation list>)
             getFilterMeth.InvokeCode <- (fun args -> 
                                 <@@ 
                                     let dict = ((%%args.[0] : obj) :?> System.Collections.Generic.Dictionary<string,string list>)
-                                    let ret = new Dictionary<string, string list>()
+                                    let obsFilter = new Dictionary<string, string list>()
                                     for f in dict.Where((fun d -> d.Value.Length > 0)) do
-                                        ret.Add(f.Key, f.Value)
-                                    ret
+                                        obsFilter.Add(f.Key, f.Value)
+
+                                    let fileParser = createPraser pathToDatasetFile
+                                    fileParser.filter (obsFilter)
                                  @@>)
             filterTy.AddMember (getFilterMeth)
             filterTy
@@ -82,17 +84,6 @@ type public DatasetProvider(cfg:TypeProviderConfig) as this =
 
         provider.AddMember <| ProvidedConstructor(parameters = [], InvokeCode = fun args -> <@@ new Dictionary<string, string list>() @@>)
 
-        let filePath = args.[0] :?> string
-        // Apply filter on statistics file
-        provider.AddMember <| ProvidedMethod("Filter",
-                                       [ProvidedParameter("obsFilter", typeof<Dictionary<string,string list>>)], 
-                                       typeof<Observation list>, 
-                                       InvokeCode = (fun [me; obsFilter] -> 
-                                                            <@@
-                                                                 let fileParser = createPraser pathToDatasetFile
-                                                                fileParser.filter ((%%obsFilter : Dictionary<string, string list>))
-                                                            @@>))
-        
         provider.AddMembers(dimensionTypes.Union([filterProvider]) |> Seq.toList)
 
         provider)
