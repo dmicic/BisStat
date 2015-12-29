@@ -64,24 +64,35 @@ module Parser =
         member x.isTimePeriodColumn (column : string) =
             column = "Time Period"
 
+        member x.skipHeader (reader:StreamReader) =
+            [1 .. x.headerRowCount] |> List.iter (fun i -> reader.ReadLine() |> ignore)
+
+        member x.getHeader () =
+            use reader = new StreamReader(filePath)
+            x.skipHeader reader
+            
+            x.splitDimensions(reader.ReadLine()) 
+                |> Seq.takeWhile (fun d -> not (x.isTimePeriodColumn d))
+                |> Seq.map (fun d -> d.Replace("\"", ""))
+                |> Seq.toArray
+
+        member x.getPeriods () = 
+            use reader = new StreamReader(filePath)
+            x.skipHeader reader
+
+            x.splitDimensions(reader.ReadLine())
+                |> Seq.skipWhile (fun d -> not (x.isTimePeriodColumn d))
+                |> Seq.skip 1
+                |> Seq.map (fun d -> d.Replace("\"", ""))
+                |> Array.ofSeq
+
         // Get dataset including the dimesions and the related memebers
         member x.getDataset () = 
                 match x.dataset with
                     | Some d -> d
                     | None ->   let lines = File.ReadLines(filePath)
             
-                                let dimNames = 
-                                    x.splitDimensions <| lines.Skip(x.headerRowCount).First()
-                                        |> Seq.takeWhile (fun d -> not (x.isTimePeriodColumn d))
-                                        |> Seq.map (fun d -> d.Replace("\"", ""))
-                                        |> Array.ofSeq
-
-                                let periods =
-                                    x.splitDimensions <| lines.Skip(x.headerRowCount).First()
-                                        |> Seq.skipWhile (fun d -> not (x.isTimePeriodColumn d))
-                                        |> Seq.skip 1
-                                        |> Seq.map (fun d -> d.Replace("\"", ""))
-                                        |> Array.ofSeq
+                                let dimNames = x.getHeader()
 
                                 let observations = 
                                     lines
@@ -100,20 +111,23 @@ module Parser =
                                         |> Seq.mapi (fun i dim -> new Dimension ((Array.get dimNames i), i, dim))
                                         |> Array.ofSeq
                
-                                x.dataset <- Some(new Dataset(dimensions, periods))
+                                x.dataset <- Some(new Dataset(dimensions, x.getPeriods()))
                                 x.dataset.Value
 
         // Retrieve observations based on observation code part filter
         member x.filter (obsFilter : Dictionary<string, string list>) =
-            let dataset = x.getDataset()
+            let dimensions = 
+                x.getHeader()
+                    |> Seq.mapi (fun i dim -> new Dimension(dim, i, Array.empty))
+                
             
             let filterDims = 
-                dataset.dimensions
+                dimensions
                     |> Seq.map (fun dim -> new ObservationFilter(dim.name, dim.position, if obsFilter.ContainsKey(dim.name) then Some(obsFilter.[dim.name]) else None))
                     |> Seq.filter (fun f -> f.memberFilter.IsSome)
                     |> Seq.toArray
 
-            let headerCount = dataset.dimensions.Count()
+            let headerCount = dimensions.Count()
 
             let filtered = 
                 File.ReadAllLines(filePath)
@@ -124,8 +138,15 @@ module Parser =
                                                 |> Seq.filter (fun obsFilter -> obsFilter.memberFilter.Value.Contains(obs.[obsFilter.dimensionPosition]))
                                                 |> Seq.length = filterDims.Count())
                     |> Seq.map (fun o -> o.Skip(headerCount).ToArray())
-                    |> Seq.map (fun o -> o.[o.Length-1] <- o.[o.Length-1].Replace("\"",System.String.Empty)
-                                         new Observation(o.[0], new Map<string, option<float>>(dataset.periods |> Seq.mapi (fun i period -> period, (if (i+1 < o.Length) && not (System.String.IsNullOrWhiteSpace(o.[i+1])) then Some(System.Convert.ToDouble(o.[i+1])) else None))))) //Some(System.Convert.ToDouble(o.[i+1]))
+                    |> Seq.map (fun o -> o.[o.Length - 1] <- o.[o.Length - 1].Replace("\"",System.String.Empty)
+                                         new Observation(o.[0], 
+                                            new Map<string, option<float>>(
+                                                x.getPeriods() 
+                                                    |> Seq.mapi (fun i period -> 
+                                                                       period, (if i+1 < o.Length && not (System.String.IsNullOrWhiteSpace o.[i+1]) then 
+                                                                                   Some(System.Convert.ToDouble(o.[i+1])) 
+                                                                                else 
+                                                                                   None)))))
                     |> List.ofSeq
 
             filtered
