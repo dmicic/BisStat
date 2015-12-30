@@ -33,7 +33,7 @@ type public DatasetProvider(cfg:TypeProviderConfig) as this =
                     |> Seq.map (fun d -> 
                                     let p = ProvidedTypeDefinition(d.name, Some typeof<obj>, HideObjectMethods = true)
                                     d.members
-                                        |> Seq.map (fun m -> ProvidedLiteralField(m, typeof<string>, m.Substring(0, m.IndexOf(':'))))
+                                        |> Seq.map (fun m -> ProvidedProperty(m, typeof<string>, IsStatic = true, GetterCode = fun args -> <@@ m.Substring(0, m.IndexOf(':')) @@> ))
                                         |> Seq.iter (fun m -> p.AddMember(m))
                                     p)
                     |> Seq.toList
